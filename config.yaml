@@ -1,0 +1,33 @@
+# config.yaml
+# Single source of truth for paths, seeds, and data assumptions.
+# Every module reads from here. Never hard-code a path or a magic number in src/.
+
+seed: 42
+
+paths:
+  raw_dir: dataset
+  processed_dir: data/processed
+  output_dir: outputs
+  train: dataset/train.csv
+  test: dataset/test.csv
+  sample_submission: dataset/sample_submission.csv
+
+data:
+  index_col: Index
+  target: demand
+  panel_keys: [day, timestamp, geohash] # one row must be unique on this triple
+  categorical: [RoadType, LargeVehicles, Landmarks, Weather]
+  numeric: [NumberofLanes, Temperature]
+  geohash_len: 6
+  n_slots: 96 # 24h / 15min = 96 slots per day
+
+# Assumptions we assert at load time. If reality drifts from these, fail loudly.
+contract:
+  target_min_exclusive: 0.0 # demand strictly > 0
+  target_max_inclusive: 1.0 # demand <= 1
+  expected_days: [48, 49]
+  # tolerances for missingness (fraction). A breach means the data changed.
+  max_missing:
+    RoadType: 0.02
+    Temperature: 0.05
+    Weather: 0.02

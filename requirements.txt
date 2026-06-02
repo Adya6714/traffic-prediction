@@ -1,0 +1,18 @@
+# Core
+pandas>=2.0
+numpy>=1.24
+pyyaml>=6.0
+scikit-learn>=1.3
+
+# Models (added as we reach the modeling stage)
+lightgbm>=4.0
+xgboost>=2.0
+catboost>=1.2
+
+# Tuning + tracking (added at the optimization stage)
+optuna>=3.4
+
+# EDA / notebooks
+matplotlib>=3.7
+seaborn>=0.12
+jupyter
