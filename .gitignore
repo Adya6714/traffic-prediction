@@ -1,0 +1,34 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Training artifacts
+catboost_info/
+
+# Generated outputs (keep champion via exception below)
+outputs/*
+!outputs/agent_b6_hwy_model_up.csv
+!outputs/.gitkeep
+
+# Build artifacts
+submission_bundle/
+submission_bundle.zip
+
+# Competition data (download from hackathon portal)
+dataset/*.csv
+
+# Processed cache
+data/processed/
+
+# Local notebooks scratch
+experiments/Untitled
