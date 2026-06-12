@@ -14,6 +14,7 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="#the-problem">Problem</a> ·
   <a href="#solution">Solution</a> ·
+  <a href="#research-journey">Research</a> ·
   <a href="#results">Results</a> ·
   <a href="docs/APPROACH.md">Full Write-up</a> ·
   <a href="reproduce.ipynb">Notebook</a>
@@ -130,6 +131,79 @@ All features are leakage-safe (out-of-fold encodings on day 48; test rows never 
 
 ---
 
+## Research journey
+
+We did not tune one model until it worked. We ran a structured assumption loop: state a belief → encode it → test on the leaderboard (daytime is the only honest validator) → log the outcome. Every assumption is tracked in [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md); the full batch-by-batch write-up is in [`docs/APPROACH.md`](docs/APPROACH.md) §6.
+
+### How we measured
+
+| Validator | What it tests | Trust for daytime? |
+|:----------|:--------------|:-------------------|
+| **Public leaderboard** | Real day-49 daytime labels | **Yes — primary** |
+| Daytime folds on day 48 | Same time regime, single day | Noisy; filter only |
+| Across-day fold (day 49 morning) | Nighttime day-over-day shift | **Misleading** — looked great, hurt LB |
+
+Local `competition_score()` (`max(0, 100×R²`) lives in `src/splits.py` and was used in diagnostics — but the **87.90 champion score was never computable locally** (test labels are hidden).
+
+### Assumptions that survived → built into the champion
+
+| Belief | Evidence | In the final model? |
+|:-------|:---------|:--------------------|
+| **RoadType dominates** demand (Highway ≫ Residential) | EDA Layer 2 | Per-RoadType blend weights |
+| **Slot-level detail matters** for daytime highways | LB: drop slots → ~69 | `raw_cell` keeps `(geohash, slot)` |
+| **Seen geohashes are predictable** from day-48 history | Baselines, diag02 | Hierarchical lookup + encodings |
+| **Model adds value as a correction**, not a replacement | Hybrid beats either alone | 0.15–0.25 model weight in blend |
+| **Day-49 row features** capture day-over-day change | diag03: 49 → 83 | `corr` corrector |
+| **Lat/lon + heavier trees help a little** | Batch 4 +0.18 | `corr2` in four-way blend |
+| **Highways vs residential want different mixes** | Batch 6 +0.25 | Champion recipe |
+
+### Assumptions we tested and rejected
+
+| Belief | Result | Why it failed |
+|:-------|:-------|:--------------|
+| Weather / Temperature / Landmarks drive demand | REJECTED | Flat within RoadType (EDA) |
+| Scale predictions up for busier day 49 | REJECTED | exp01 + batch 8: morning ≠ daytime |
+| Morning momentum / damping (today-factor) | REJECTED | 83.6 → 50.6 as damping rises |
+| Geohash all-day average (no slot) | REJECTED | ~69 on daytime LB |
+| Smoothed per-cell lookup | REJECTED | ~69 — washes highway peaks |
+| More model power alone (trees, CatBoost, depth) | PLATEAU | 87.47 → 87.65 only (+0.18) |
+| Spatio-temporal neighbours (corr3) | REJECTED | +7.4 on night fold, 87.41 on LB |
+| Early-slot corrector boost | REJECTED | 87.63 < champion |
+| Finer per-RoadType weight grid (batch 7) | PLATEAU | All variants ≤ 87.90 |
+| External Grab dataset lookup | **Not pursued** | Rules violation; scores of 100 are lookups |
+
+### Progression in one line
+
+```
+lookup → +model blend → +corrector → +corr2 → +per-RoadType weights → plateau
+ 83.6      86.3           87.5         87.7            87.9
+```
+
+Gains came from **structural changes** (new predictor, blend architecture, segmentation). Tweaking the same knobs (more trees, stronger scaling, spatial features) stopped moving the needle after batch 4; batch 6 was the last structural win; batches 7–8 confirmed the ceiling.
+
+### Why we stopped
+
+1. **Model-power axis exhausted** — batches 4–5 added lat/lon, 2000 trees, CatBoost, spatio-temporal features; score moved 87.47 → 87.65 → stuck.
+2. **One structural win left** — per-RoadType blend weights (batch 6) gained +0.25; refining them (batch 7) gained nothing.
+3. **Last hypothesis failed** — scaling daytime preds by day-49 morning busy-ratio (batch 8) collapsed to 63.9 despite +22 on the morning fold.
+4. **No hidden test labels** — we cannot tune further without new ideas or external data (which we did not use).
+
+Legitimate participants report an honest ceiling around **92–93**; our **87.90** is reproducible from `train.csv` only. Pushing further would need a genuinely new structural idea (e.g. live day-49 trajectory features, rank targets, segmented models) — none of those beat the champion in our experiments.
+
+<details>
+<summary><strong>Where to read more</strong></summary>
+
+| Document | Contents |
+|:---------|:---------|
+| [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md) | Every assumption (A1–A25+), CONFIRMED/REJECTED/OPEN status, full LB submission table |
+| [`docs/APPROACH.md`](docs/APPROACH.md) | EDA, features, models, validation challenge, all 8 batches |
+| [`experiments/README.md`](experiments/README.md) | Which script runs which experiment |
+| [`notebooks/`](notebooks/) | Layer 1–3 EDA that grounded early assumptions |
+
+</details>
+
+---
+
 ## Results
 
 ### How the score improved
@@ -152,17 +226,7 @@ All features are leakage-safe (out-of-fold encodings on day 48; test rows never 
 | 7 | Refine weights around batch 6 | ≤ 87.90 (plateau) |
 | 8 | Multiplicative day-49 morning factor | 63.9 – 83.5 (hurt) |
 
-### Ideas we tested and rejected
-
-| Idea | Score | Takeaway |
-|:-----|------:|:---------|
-| Drop slot detail (all-day geohash average) | ~69 | Slot patterns matter for daytime highways |
-| Smoothed per-cell lookup | ~69 | Smoothing kills the evening peak signal |
-| More spatio-temporal features (batch 5) | 87.41 | Nighttime CV misled us |
-| Boost corrector on early slots (batch 6) | 87.63 | Early-slot override hurts |
-| Scale by day-49 morning busy-ratio (batch 8) | 63.9 | Morning shift ≠ daytime shift |
-
-→ Full experiment log: [`docs/APPROACH.md`](docs/APPROACH.md) · [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md)
+See [**Research journey**](#research-journey) for assumptions, dead-ends, and why we plateaued. Score tables for every submission: [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md) §5.
 
 ---
 
